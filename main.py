@@ -25,7 +25,7 @@ class LearnMate(QWidget):
         self.resize(1200, 700)
 
         self.current_pdf = None
-
+        self.mode = "home"
         main_layout = QHBoxLayout()
 
         # Sidebar
@@ -45,12 +45,12 @@ class LearnMate(QWidget):
         subjects_btn = QPushButton("Subjects")
         notes_btn = QPushButton("Notes")
         settings_btn = QPushButton("Settings")
-
+        flashcard_btn = QPushButton("Flashcards")
         # Button Connections
         dashboard_btn.clicked.connect(self.read_current_pdf)
         upload_btn.clicked.connect(self.upload_pdf)
         summary_btn.clicked.connect(self.summarize_pdf)
-
+        flashcard_btn.clicked.connect(self.generate_flashcards)
         subjects_btn.clicked.connect(
             lambda: self.change_page("Subjects Page")
         )
@@ -69,10 +69,16 @@ class LearnMate(QWidget):
         sidebar.addWidget(subjects_btn)
         sidebar.addWidget(notes_btn)
         sidebar.addWidget(settings_btn)
+        sidebar.addWidget(flashcard_btn)
         sidebar.addStretch()
 
         # Content Area
         self.content = QTextEdit()
+        self.content.setReadOnly(True)
+        self.content.setStyleSheet("""
+            font-size: 14px;
+            padding: 10px;
+        """)
         self.content.setReadOnly(True)
         self.content.setText("Welcome to LearnMate")
 
@@ -86,6 +92,7 @@ class LearnMate(QWidget):
     # ----------------------------------
 
     def change_page(self, text):
+        self.mode = "home"
         self.content.setText(text)
 
     # ----------------------------------
@@ -129,7 +136,7 @@ class LearnMate(QWidget):
     # ----------------------------------
 
     def show_library(self):
-
+        self.mode = "library"
         uploads_folder = "uploads"
 
         if not os.path.exists(uploads_folder):
@@ -163,7 +170,7 @@ class LearnMate(QWidget):
     # ----------------------------------
 
     def read_current_pdf(self):
-
+        self.mode = "pdf"
         if not self.current_pdf:
             self.content.setText(
                 "Please upload a PDF first."
@@ -203,48 +210,128 @@ class LearnMate(QWidget):
 
     def summarize_pdf(self):
 
+        self.mode = "summary"
+
         if not self.current_pdf:
-            self.content.setText(
-                "Please upload a PDF first."
-            )
+            self.content.setText("Please upload a PDF first.")
             return
 
         try:
-
             doc = fitz.open(self.current_pdf)
 
             text = ""
-
             for page in doc:
                 text += page.get_text()
 
             doc.close()
 
             if not text.strip():
-                self.content.setText(
-                    "No text found in PDF."
-                )
+                self.content.setText("No text found in PDF.")
                 return
+
+            # ----------------------------
+            # SMART CLEANING
+            # ----------------------------
 
             sentences = text.split(".")
 
+            # Remove empty + very short sentences
+            cleaned = []
+            for s in sentences:
+                s = s.strip()
+                if len(s) > 40:
+                    cleaned.append(s)
+
+            # Score sentences (simple keyword scoring)
+            keywords = ["is", "are", "was", "important", "definition", "system", "data", "process"]
+
+            scored = []
+
+            for s in cleaned:
+                score = 0
+                lower = s.lower()
+
+                for k in keywords:
+                    if k in lower:
+                        score += 1
+
+                scored.append((score, s))
+
+            # Sort by importance
+            scored.sort(reverse=True)
+
+            # Take top sentences
+            top_sentences = [s for _, s in scored[:5]]
+
             summary = ""
 
-            for sentence in sentences[:5]:
-                sentence = sentence.strip()
+            for s in top_sentences:
+                summary += "• " + s + ".\n\n"
 
-                if sentence:
-                    summary += sentence + ".\n\n"
-
-            self.content.setText(
-                "SUMMARY\n\n" + summary
-            )
+            self.content.setText("SMART SUMMARY\n\n" + summary)
 
         except Exception as e:
-            self.content.setText(
-                f"Error:\n{str(e)}"
-            )
+            self.content.setText(f"Error: {str(e)}")
+    def generate_flashcards(self):
 
+            self.mode = "flashcards"
+
+            if not self.current_pdf:
+                self.content.setText("Please upload a PDF first.")
+                return
+
+            try:
+                doc = fitz.open(self.current_pdf)
+
+                text = ""
+                for page in doc:
+                    text += page.get_text()
+
+                doc.close()
+
+                if not text.strip():
+                    self.content.setText("No text found in PDF.")
+                    return
+
+                sentences = text.split(".")
+
+                # Clean sentences
+                cleaned = []
+                for s in sentences:
+                    s = s.strip()
+                    if len(s) > 40:
+                        cleaned.append(s)
+
+                # Take meaningful sentences only
+                flashcards = []
+                for s in cleaned:
+
+                    words = s.split()
+                    if len(words) < 8:
+                        continue
+
+                    # create better Q/A logic
+                    key_part = " ".join(words[:5])
+                    rest_part = " ".join(words[5:15])
+
+                    question = f"What is {key_part}?"
+                    answer = rest_part if rest_part else s
+
+                    flashcards.append((question, answer))
+
+                    if len(flashcards) == 6:
+                        break
+
+                output = "FLASHCARDS (SMART VERSION)\n\n"
+
+                for i, (q, a) in enumerate(flashcards, 1):
+                    output += f"Q{i}: {q}\n"
+                    output += f"A{i}: {a}\n\n"
+
+                self.content.setText(output)
+
+            except Exception as e:
+                self.content.setText(f"Error: {str(e)}")
 
 # ----------------------------------
 # Run App
