@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QVBoxLayout,
     QFileDialog,
+    QLineEdit,
     QLabel
 )
 
@@ -46,11 +47,17 @@ class LearnMate(QWidget):
         notes_btn = QPushButton("Notes")
         settings_btn = QPushButton("Settings")
         flashcard_btn = QPushButton("Flashcards")
+        quiz_btn = QPushButton("Generate Quiz")
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Search PDF...")
+        search_btn = QPushButton("Search")
         # Button Connections
         dashboard_btn.clicked.connect(self.read_current_pdf)
         upload_btn.clicked.connect(self.upload_pdf)
         summary_btn.clicked.connect(self.summarize_pdf)
         flashcard_btn.clicked.connect(self.generate_flashcards)
+        quiz_btn.clicked.connect(self.generate_quiz)
+        search_btn.clicked.connect(self.search_pdf)
         subjects_btn.clicked.connect(
             lambda: self.change_page("Subjects Page")
         )
@@ -70,6 +77,9 @@ class LearnMate(QWidget):
         sidebar.addWidget(notes_btn)
         sidebar.addWidget(settings_btn)
         sidebar.addWidget(flashcard_btn)
+        sidebar.addWidget(quiz_btn)
+        sidebar.addWidget(self.search_input)
+        sidebar.addWidget(search_btn)
         sidebar.addStretch()
 
         # Content Area
@@ -332,6 +342,129 @@ class LearnMate(QWidget):
 
             except Exception as e:
                 self.content.setText(f"Error: {str(e)}")
+    def search_pdf(self):
+
+        if not self.current_pdf:
+            self.content.setText(
+                "Please upload a PDF first."
+            )
+            return
+
+        keyword = self.search_input.text().strip()
+
+        if not keyword:
+            self.content.setText(
+                "Enter a keyword."
+            )
+            return
+
+        try:
+
+            doc = fitz.open(self.current_pdf)
+
+            text = ""
+
+            for page in doc:
+                text += page.get_text()
+
+            doc.close()
+
+            lines = text.split("\n")
+
+            matches = []
+
+            for line in lines:
+
+                if keyword.lower() in line.lower():
+
+                    matches.append(line.strip())
+
+            if not matches:
+
+                self.content.setText(
+                    f"No matches found for '{keyword}'"
+                )
+                return
+
+            result = f"Found {len(matches)} matches\n\n"
+
+            for i, match in enumerate(matches[:20], 1):
+                result += f"{i}. {match}\n\n"
+
+            self.content.setText(result)
+
+        except Exception as e:
+            self.content.setText(
+                f"Error: {str(e)}"
+            )
+    def generate_quiz(self):
+
+        if not self.current_pdf:
+            self.content.setText(
+                "Please upload a PDF first."
+            )
+            return
+
+        try:
+
+            doc = fitz.open(self.current_pdf)
+
+            text = ""
+
+            for page in doc:
+                text += page.get_text()
+
+            doc.close()
+
+            sentences = text.split(".")
+
+            questions = []
+
+            for s in sentences:
+
+                s = s.strip()
+
+                if len(s) > 50:
+
+                    words = s.split()
+
+                    if len(words) > 8:
+
+                        answer = words[-3:]
+
+                        question = (
+                            " ".join(words[:-3])
+                        )
+
+                        questions.append(
+                            (question, answer)
+                        )
+
+                if len(questions) == 5:
+                    break
+
+            output = "QUIZ\n\n"
+
+            for i, (q, a) in enumerate(
+                questions,
+                start=1
+            ):
+
+                output += (
+                    f"Q{i}: {q} ____ ?\n"
+                )
+
+                output += (
+                    f"Answer: {' '.join(a)}\n\n"
+                )
+
+            self.content.setText(output)
+
+        except Exception as e:
+
+            self.content.setText(
+                f"Error: {str(e)}"
+            )
 
 # ----------------------------------
 # Run App
