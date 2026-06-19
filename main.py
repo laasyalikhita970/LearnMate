@@ -2,7 +2,14 @@ import sys
 import os
 import shutil
 import fitz
+from ai_helper import ask_ai
+from groq import Groq
+from dotenv import load_dotenv
+load_dotenv()
 
+client = Groq(
+    api_key=os.getenv("GROQ_API_KEY")
+)
 from PyQt6.QtWidgets import (
     QApplication,
     QWidget,
@@ -51,6 +58,13 @@ class LearnMate(QWidget):
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Search PDF...")
         search_btn = QPushButton("Search")
+        self.question_input = QTextEdit()
+        self.question_input.setPlaceholderText(
+            "Ask anything about the PDF..."
+        )
+        self.question_input.setMaximumHeight(80)
+
+        ask_ai_btn = QPushButton("Ask AI")
         # Button Connections
         dashboard_btn.clicked.connect(self.read_current_pdf)
         upload_btn.clicked.connect(self.upload_pdf)
@@ -58,6 +72,7 @@ class LearnMate(QWidget):
         flashcard_btn.clicked.connect(self.generate_flashcards)
         quiz_btn.clicked.connect(self.generate_quiz)
         search_btn.clicked.connect(self.search_pdf)
+        ask_ai_btn.clicked.connect(self.ask_pdf_question)
         subjects_btn.clicked.connect(
             lambda: self.change_page("Subjects Page")
         )
@@ -80,6 +95,8 @@ class LearnMate(QWidget):
         sidebar.addWidget(quiz_btn)
         sidebar.addWidget(self.search_input)
         sidebar.addWidget(search_btn)
+        sidebar.addWidget(self.question_input)
+        sidebar.addWidget(ask_ai_btn)
         sidebar.addStretch()
 
         # Content Area
@@ -464,6 +481,52 @@ class LearnMate(QWidget):
 
             self.content.setText(
                 f"Error: {str(e)}"
+            )
+    def ask_pdf_question(self):
+
+        if not self.current_pdf:
+            self.content.setText(
+                "Please upload a PDF first."
+            )
+            return
+
+        question = self.question_input.toPlainText().strip()
+
+        if not question:
+            self.content.setText(
+                "Please enter a question."
+            )
+            return
+
+        try:
+
+            doc = fitz.open(self.current_pdf)
+
+            pdf_text = ""
+
+            for page in doc:
+                pdf_text += page.get_text()
+
+            doc.close()
+
+            self.content.setText(
+                "AI is thinking..."
+            )
+
+            answer = ask_ai(
+                pdf_text,
+                question
+            )
+
+            self.content.setText(
+                f"QUESTION:\n{question}\n\n"
+                f"ANSWER:\n{answer}"
+            )
+
+        except Exception as e:
+
+            self.content.setText(
+                f"Error:\n{str(e)}"
             )
 
 # ----------------------------------
