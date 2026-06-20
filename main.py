@@ -6,6 +6,7 @@ from ai_helper import ask_ai
 from groq import Groq
 from dotenv import load_dotenv
 load_dotenv()
+from PyQt6.QtWidgets import QListWidget
 
 client = Groq(
     api_key=os.getenv("GROQ_API_KEY")
@@ -18,8 +19,10 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QVBoxLayout,
     QFileDialog,
+    QLabel,
     QLineEdit,
-    QLabel
+    QListWidget,
+    QListWidgetItem
 )
 
 from PyQt6.QtCore import Qt
@@ -33,13 +36,55 @@ class LearnMate(QWidget):
         self.resize(1200, 700)
 
         self.current_pdf = None
+        self.pdf_list = QListWidget()
+
+        self.pdf_list.itemClicked.connect(
+    self.select_pdf
+)
+        self.setStyleSheet("""
+QWidget{
+    background-color:#1e1e1e;
+    color:white;
+}
+
+QPushButton{
+    background-color:#2d89ef;
+    color:white;
+    border:none;
+    padding:10px;
+    border-radius:8px;
+    font-size:14px;
+}
+
+QPushButton:hover{
+    background-color:#4aa3ff;
+}
+
+QTextEdit{
+    background:#252526;
+    border:1px solid #444;
+    border-radius:10px;
+    padding:10px;
+    color:white;
+}
+""")
         self.mode = "home"
+        self.load_last_pdf()
+        self.load_library()
         main_layout = QHBoxLayout()
 
         # Sidebar
         sidebar = QVBoxLayout()
+        sidebar_widget = QWidget()
+        sidebar_widget.setLayout(sidebar)
+        sidebar_widget.setFixedWidth(220)
 
-        title = QLabel("LearnMate")
+        title = QLabel("📚 LearnMate")
+        title.setStyleSheet("""
+font-size:28px;
+font-weight:bold;
+padding:15px;
+""")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setStyleSheet("""
             font-size: 22px;
@@ -52,7 +97,7 @@ class LearnMate(QWidget):
         summary_btn = QPushButton("Summarize PDF")
         subjects_btn = QPushButton("Subjects")
         notes_btn = QPushButton("Notes")
-        settings_btn = QPushButton("Settings")
+        refresh_btn = QPushButton("Refresh Library")
         flashcard_btn = QPushButton("Flashcards")
         quiz_btn = QPushButton("Generate Quiz")
         self.search_input = QLineEdit()
@@ -79,18 +124,21 @@ class LearnMate(QWidget):
 
         notes_btn.clicked.connect(self.show_library)
 
-        settings_btn.clicked.connect(
-            lambda: self.change_page("Settings Page")
+        refresh_btn.clicked.connect(
+            self.load_library
         )
 
+        
         # Sidebar Layout
         sidebar.addWidget(title)
         sidebar.addWidget(dashboard_btn)
+        sidebar.addWidget(QLabel("Library"))
+        sidebar.addWidget(self.pdf_list)
         sidebar.addWidget(upload_btn)
         sidebar.addWidget(summary_btn)
         sidebar.addWidget(subjects_btn)
         sidebar.addWidget(notes_btn)
-        sidebar.addWidget(settings_btn)
+        sidebar.addWidget(refresh_btn)
         sidebar.addWidget(flashcard_btn)
         sidebar.addWidget(quiz_btn)
         sidebar.addWidget(self.search_input)
@@ -109,7 +157,7 @@ class LearnMate(QWidget):
         self.content.setReadOnly(True)
         self.content.setText("Welcome to LearnMate")
 
-        main_layout.addLayout(sidebar, 1)
+        main_layout.addWidget(sidebar_widget)
         main_layout.addWidget(self.content, 4)
 
         self.setLayout(main_layout)
@@ -153,45 +201,55 @@ class LearnMate(QWidget):
         shutil.copy(file_path, destination)
 
         self.current_pdf = destination
+        self.load_library()
 
         self.content.setText(
             f"PDF Uploaded Successfully\n\n{filename}"
         )
 
+    def load_library(self):
+
+        self.pdf_list.clear()
+
+        uploads = "uploads"
+
+        if not os.path.exists(uploads):
+            return
+
+        for file in os.listdir(uploads):
+
+            if file.endswith(".pdf"):
+                self.pdf_list.addItem(file)
     # ----------------------------------
     # Show Uploaded PDFs
     # ----------------------------------
 
     def show_library(self):
-        self.mode = "library"
+
+        self.content.clear()
+
+        self.load_library()
+
+        self.content.setText(
+            "Select a PDF from the Library list on the left."
+        )
+
+
+    def load_last_pdf(self):
+
         uploads_folder = "uploads"
 
         if not os.path.exists(uploads_folder):
-            self.content.setText(
-                "No PDFs uploaded yet."
-            )
             return
 
-        files = os.listdir(uploads_folder)
-
         pdfs = [
-            file for file in files
+            os.path.join(uploads_folder, file)
+            for file in os.listdir(uploads_folder)
             if file.lower().endswith(".pdf")
         ]
 
-        if not pdfs:
-            self.content.setText(
-                "No PDFs uploaded yet."
-            )
-            return
-
-        text = "Uploaded PDFs\n\n"
-
-        for pdf in pdfs:
-            text += f"• {pdf}\n"
-
-        self.content.setText(text)
-
+        if pdfs:
+            self.current_pdf = pdfs[-1]
     # ----------------------------------
     # Read Current PDF
     # ----------------------------------
@@ -256,46 +314,22 @@ class LearnMate(QWidget):
                 self.content.setText("No text found in PDF.")
                 return
 
-            # ----------------------------
-            # SMART CLEANING
-            # ----------------------------
+            response = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {
+                        "role": "user",
+                        "content":
+                        f"Summarize this PDF in simple study notes:\n\n{text[:6000]}"
+                    }
+                ]
+            )
 
-            sentences = text.split(".")
+            summary = response.choices[0].message.content
 
-            # Remove empty + very short sentences
-            cleaned = []
-            for s in sentences:
-                s = s.strip()
-                if len(s) > 40:
-                    cleaned.append(s)
-
-            # Score sentences (simple keyword scoring)
-            keywords = ["is", "are", "was", "important", "definition", "system", "data", "process"]
-
-            scored = []
-
-            for s in cleaned:
-                score = 0
-                lower = s.lower()
-
-                for k in keywords:
-                    if k in lower:
-                        score += 1
-
-                scored.append((score, s))
-
-            # Sort by importance
-            scored.sort(reverse=True)
-
-            # Take top sentences
-            top_sentences = [s for _, s in scored[:5]]
-
-            summary = ""
-
-            for s in top_sentences:
-                summary += "• " + s + ".\n\n"
-
-            self.content.setText("SMART SUMMARY\n\n" + summary)
+            self.content.setText(
+                "AI SUMMARY\n\n" + summary
+            )
 
         except Exception as e:
             self.content.setText(f"Error: {str(e)}")
@@ -528,6 +562,33 @@ class LearnMate(QWidget):
             self.content.setText(
                 f"Error:\n{str(e)}"
             )
+
+    def select_pdf(self, item):
+
+        filename = item.text()
+
+        self.current_pdf = os.path.join(
+            "uploads",
+            filename
+        )
+
+        self.read_current_pdf()
+
+        selected = self.pdf_list.currentItem()
+
+        if not selected:
+            return
+
+        filename = selected.text()
+
+        self.current_pdf = os.path.join(
+            "uploads",
+            filename
+        )
+
+        self.content.setText(
+            f"Selected PDF:\n\n{filename}"
+        )
 
 # ----------------------------------
 # Run App
