@@ -6,7 +6,7 @@ from ai_helper import ask_ai
 from groq import Groq
 from dotenv import load_dotenv
 load_dotenv()
-from PyQt6.QtWidgets import QListWidget
+
 
 client = Groq(
     api_key=os.getenv("GROQ_API_KEY")
@@ -80,17 +80,16 @@ QTextEdit{
         sidebar_widget.setFixedWidth(220)
 
         title = QLabel("📚 LearnMate")
+        model_label = QLabel("AI: Groq Llama 3")
+        model_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
         title.setStyleSheet("""
 font-size:28px;
 font-weight:bold;
 padding:15px;
 """)
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet("""
-            font-size: 22px;
-            font-weight: bold;
-            padding: 10px;
-        """)
+       
 
         dashboard_btn = QPushButton("Dashboard")
         upload_btn = QPushButton("Upload PDF")
@@ -119,8 +118,8 @@ padding:15px;
         search_btn.clicked.connect(self.search_pdf)
         ask_ai_btn.clicked.connect(self.ask_pdf_question)
         subjects_btn.clicked.connect(
-            lambda: self.change_page("Subjects Page")
-        )
+    self.show_subjects
+)
 
         notes_btn.clicked.connect(self.show_library)
 
@@ -131,6 +130,7 @@ padding:15px;
         
         # Sidebar Layout
         sidebar.addWidget(title)
+        sidebar.addWidget(model_label)
         sidebar.addWidget(dashboard_btn)
         sidebar.addWidget(QLabel("Library"))
         sidebar.addWidget(self.pdf_list)
@@ -201,6 +201,9 @@ padding:15px;
         shutil.copy(file_path, destination)
 
         self.current_pdf = destination
+        self.setWindowTitle(
+    f"LearnMate - {filename}"
+)
         self.load_library()
 
         self.content.setText(
@@ -226,14 +229,75 @@ padding:15px;
 
     def show_library(self):
 
-        self.content.clear()
+        uploads = "uploads"
 
-        self.load_library()
+        if not os.path.exists(uploads):
+            self.content.setText("No PDFs found.")
+            return
 
-        self.content.setText(
-            "Select a PDF from the Library list on the left."
-        )
+        pdfs = [
+            f for f in os.listdir(uploads)
+            if f.endswith(".pdf")
+        ]
 
+        text = "LIBRARY\n\n"
+
+        for i, pdf in enumerate(pdfs, start=1):
+            text += f"{i}. {pdf}\n"
+
+        text += "\n\nSelect any file from the Library panel."
+
+        self.content.setText(text)
+
+    def show_subjects(self):
+
+        uploads = "uploads"
+
+        if not os.path.exists(uploads):
+            self.content.setText("No PDFs found.")
+            return
+
+        subjects = {}
+
+        for file in os.listdir(uploads):
+
+            if not file.endswith(".pdf"):
+                continue
+
+            filename = file.lower()
+
+            if "dbms" in filename:
+                subject = "DBMS"
+
+            elif "os" in filename:
+                subject = "Operating Systems"
+
+            elif "cn" in filename:
+                subject = "Computer Networks"
+
+            elif "java" in filename:
+                subject = "Java"
+
+            elif "python" in filename:
+                subject = "Python"
+
+            else:
+                subject = "General"
+
+            subjects.setdefault(subject, []).append(file)
+
+        text = "SUBJECTS\n\n"
+
+        for subject, files in subjects.items():
+
+            text += f"{subject}\n"
+
+            for pdf in files:
+                text += f"   • {pdf}\n"
+
+            text += "\n"
+
+        self.content.setText(text)
 
     def load_last_pdf(self):
 
@@ -320,7 +384,7 @@ padding:15px;
                     {
                         "role": "user",
                         "content":
-                        f"Summarize this PDF in simple study notes:\n\n{text[:6000]}"
+                        f"Summarize this PDF in bullet points:\n\n{text[:3000]}"
                     }
                 ]
             )
@@ -548,9 +612,9 @@ padding:15px;
             )
 
             answer = ask_ai(
-                pdf_text,
-                question
-            )
+    pdf_text[:2500],
+    question
+)
 
             self.content.setText(
                 f"QUESTION:\n{question}\n\n"
@@ -572,24 +636,9 @@ padding:15px;
             filename
         )
 
-        self.read_current_pdf()
-
-        selected = self.pdf_list.currentItem()
-
-        if not selected:
-            return
-
-        filename = selected.text()
-
-        self.current_pdf = os.path.join(
-            "uploads",
-            filename
-        )
-
         self.content.setText(
-            f"Selected PDF:\n\n{filename}"
+            f"Selected PDF:\n\n{filename}\n\nClick Dashboard to read it."
         )
-
 # ----------------------------------
 # Run App
 # ----------------------------------
